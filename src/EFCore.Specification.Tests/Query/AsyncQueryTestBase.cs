@@ -1441,6 +1441,33 @@ namespace Microsoft.EntityFrameworkCore.Query
         }
 
         [ConditionalFact]
+        public virtual async Task Select_nested_projection()
+        {
+            using (var context = CreateContext())
+            {
+                var customers = await context.Customers
+                    .Where(c => c.CustomerID.StartsWith("A"))
+                    .Select(c => new
+                    {
+                        Customer = c,
+                        CustomerAgain = Get(context, c.CustomerID)
+                    })
+                    .ToListAsync();
+
+                Assert.Equal(4, customers.Count);
+                foreach (var customer in customers)
+                {
+                    // Issue #8864
+                    //Assert.Same(customer.Customer, customer.CustomerAgain);
+                    Assert.Equal(customer.Customer.CustomerID, customer.CustomerAgain.CustomerID);
+                }
+            }
+        }
+
+        private Customer Get(NorthwindContext context, string id)
+            => context.Customers.Single(c => c.CustomerID == id);
+
+        [ConditionalFact]
         public virtual async Task Select_nested_collection()
         {
             await AssertQuery<Customer, Order>((cs, os) =>
@@ -2255,7 +2282,7 @@ namespace Microsoft.EntityFrameworkCore.Query
                 assertOrder: true);
         }
 
-        // TODO: Need to figure out how to do this 
+        // TODO: Need to figure out how to do this
         //        [ConditionalFact]
         //        public virtual async Task GroupBy_anonymous()
         //        {
@@ -3349,26 +3376,36 @@ namespace Microsoft.EntityFrameworkCore.Query
         {
             using (var context = CreateContext())
             {
-                ((IInfrastructure<IServiceProvider>)context).Instance.GetService<IConcurrencyDetector>().EnterCriticalSection();
+                context.Database.EnsureCreated();
+
+                var task = Task.WhenAll(Enumerable.Range(0, 10)
+                    .Select(i => context.Customers.ToListAsync()));
 
                 Assert.Equal(
                     CoreStrings.ConcurrentMethodInvocation,
-                    (await Assert.ThrowsAsync<InvalidOperationException>(
-                        async () => await context.Customers.ToListAsync())).Message);
+                    Assert.Throws<InvalidOperationException>(
+                        () => context.Customers.ToList()).Message);
+
+                await task;
             }
         }
 
-        [ConditionalFact]
+        [ConditionalFact(Skip = "This test is flaky see #8305")]
         public virtual async Task Throws_on_concurrent_query_first()
         {
             using (var context = CreateContext())
             {
-                ((IInfrastructure<IServiceProvider>)context).Instance.GetService<IConcurrencyDetector>().EnterCriticalSection();
+                context.Database.EnsureCreated();
+
+                var task = Task.WhenAll(Enumerable.Range(0, 10)
+                    .Select(i => context.Customers.ToListAsync()));
 
                 Assert.Equal(
                     CoreStrings.ConcurrentMethodInvocation,
-                    (await Assert.ThrowsAsync<InvalidOperationException>(
-                        async () => await context.Customers.FirstAsync())).Message);
+                    Assert.Throws<InvalidOperationException>(
+                        () => context.Customers.First()).Message);
+
+                await task;
             }
         }
 

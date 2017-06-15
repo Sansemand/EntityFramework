@@ -3,9 +3,11 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Linq.Expressions;
+using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.EntityFrameworkCore.Query.Expressions.Internal;
@@ -2695,26 +2697,32 @@ namespace Microsoft.EntityFrameworkCore.Query
         {
             using (var context = CreateContext())
             {
-                ((IInfrastructure<IServiceProvider>)context).Instance.GetService<IConcurrencyDetector>().EnterCriticalSection();
+                context.Database.EnsureCreated();
 
                 Assert.Equal(
                     CoreStrings.ConcurrentMethodInvocation,
-                    Assert.Throws<InvalidOperationException>(
-                        () => context.Customers.ToList()).Message);
+                    Assert.Throws<AggregateException>(
+                        () => Parallel.For(0, 10, i =>
+                            {
+                                context.Customers.ToList();
+                            })).InnerExceptions.First().Message);
             }
         }
 
-        [ConditionalFact]
+        [ConditionalFact(Skip = "This test is flaky see #8305")]
         public virtual void Throws_on_concurrent_query_first()
         {
             using (var context = CreateContext())
             {
-                ((IInfrastructure<IServiceProvider>)context).Instance.GetService<IConcurrencyDetector>().EnterCriticalSection();
+                context.Database.EnsureCreated();
 
                 Assert.Equal(
                     CoreStrings.ConcurrentMethodInvocation,
-                    Assert.Throws<InvalidOperationException>(
-                        () => context.Customers.First()).Message);
+                    Assert.Throws<AggregateException>(
+                        () => Parallel.For(0, 10, i =>
+                            {
+                                context.Customers.First();
+                            })).InnerExceptions.First().Message);
             }
         }
 
@@ -3338,7 +3346,7 @@ namespace Microsoft.EntityFrameworkCore.Query
                 assertOrder: false,
                 entryCount: 8);
         }
-        
+
         [ConditionalFact]
         public virtual void No_orderby_added_for_fully_translated_manually_constructed_LOJ()
         {
@@ -3944,7 +3952,7 @@ namespace Microsoft.EntityFrameworkCore.Query
             Fixture = fixture;
         }
 
-        protected TFixture Fixture { get; }
+        protected TFixture Fixture { [DebuggerStepThrough] get; }
 
         private void AssertQuery<TItem>(
             Func<IQueryable<TItem>, int> query,
